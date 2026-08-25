@@ -144,3 +144,90 @@ function aiChooseMove(ctx) {
 
   return { r: chosen.mv.r, c: chosen.mv.c, sym: chosen.sym };
 }
+
+// ---------- 重ね取りモード専用AI ----------
+// stacks: 配列(長さ size*size)の { sym, size }[]（下から上へ積む）
+// supply: { [playerIndex]: {1:count,2:count,3:count} }
+function stackTopSymbols(stacks) {
+  return stacks.map(st => (st.length ? st[st.length - 1].sym : null));
+}
+
+function aiChooseStackMove(ctx) {
+  const { stacks, size, winLength, supply, aiIndex, humanIndex, aiSymbol, humanSymbol, difficulty } = ctx;
+
+  const moves = [];
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const st = stacks[aiIdx(size, r, c)];
+      const topSize = st.length ? st[st.length - 1].size : 0;
+      for (const sz of [1, 2, 3]) {
+        if (supply[aiIndex][sz] > 0 && sz > topSize) moves.push({ r, c, size: sz });
+      }
+    }
+  }
+  if (!moves.length) return null;
+
+  const baseTop = stackTopSymbols(stacks);
+  const candidates = [];
+  for (const mv of moves) {
+    const stacks2 = stacks.map(st => st.slice());
+    const i2 = aiIdx(size, mv.r, mv.c);
+    stacks2[i2] = stacks2[i2].concat([{ sym: aiSymbol, size: mv.size }]);
+    const top2 = stackTopSymbols(stacks2);
+    const wins = checkWinAt(top2, size, mv.r, mv.c, aiSymbol, winLength);
+    const heuristic = scoreMoveHeuristic(baseTop, size, mv.r, mv.c, aiSymbol, winLength, humanSymbol);
+    candidates.push({ mv, stacks2, top2, wins, heuristic });
+  }
+
+  for (const cand of candidates) {
+    if (cand.wins) { cand.oppCanWinNext = false; cand.oppBestHeuristic = 0; continue; }
+    const supplyAfter = {
+      [aiIndex]: Object.assign({}, supply[aiIndex]),
+      [humanIndex]: Object.assign({}, supply[humanIndex])
+    };
+    supplyAfter[aiIndex][cand.mv.size]--;
+    let oppCanWin = false, oppBestH = -Infinity;
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        const i3 = aiIdx(size, r, c);
+        const st = cand.stacks2[i3];
+        const topSize = st.length ? st[st.length - 1].size : 0;
+        for (const sz of [1, 2, 3]) {
+          if (supplyAfter[humanIndex][sz] > 0 && sz > topSize) {
+            const stacks3 = cand.stacks2.map(s => s.slice());
+            stacks3[i3] = stacks3[i3].concat([{ sym: humanSymbol, size: sz }]);
+            const top3 = stackTopSymbols(stacks3);
+            if (checkWinAt(top3, size, r, c, humanSymbol, winLength)) oppCanWin = true;
+            const h = scoreMoveHeuristic(cand.top2, size, r, c, humanSymbol, winLength, aiSymbol);
+            if (h > oppBestH) oppBestH = h;
+          }
+        }
+      }
+    }
+    cand.oppCanWinNext = oppCanWin;
+    cand.oppBestHeuristic = oppBestH === -Infinity ? 0 : oppBestH;
+  }
+
+  for (const cand of candidates) {
+    cand.goodness =
+      (cand.wins ? 1000000 : 0) +
+      (!cand.wins && cand.oppCanWinNext ? -500000 : 0) +
+      cand.heuristic - cand.oppBestHeuristic * 0.5 +
+      Math.random() * 0.5;
+  }
+  candidates.sort((a, b) => b.goodness - a.goodness);
+
+  let chosen;
+  const roll = Math.random();
+  if (difficulty === "extreme") {
+    chosen = candidates[0];
+  } else if (difficulty === "hard") {
+    chosen = roll < 0.9 ? candidates[0] : candidates[Math.floor(Math.random() * Math.min(3, candidates.length))];
+  } else if (difficulty === "normal") {
+    chosen = roll < 0.6 ? candidates[0] : candidates[Math.floor(Math.random() * Math.min(5, candidates.length))];
+  } else {
+    chosen = roll < 0.3 ? candidates[0] : candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  return { r: chosen.mv.r, c: chosen.mv.c, size: chosen.mv.size };
+}

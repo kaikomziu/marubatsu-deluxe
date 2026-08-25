@@ -237,6 +237,28 @@ body {
 }
 .wild-symbol-btn.active { border-color: var(--accent); background: var(--accent)22; }
 
+.stack-tray {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+}
+.stack-tray.hidden { display: none; }
+.stack-size-btn {
+  border: 2px solid var(--line);
+  background: var(--cell-bg);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.stack-size-btn.active { border-color: var(--accent); background: var(--accent)22; }
+.stack-size-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
 .board-wrap {
   display: flex;
   justify-content: center;
@@ -271,6 +293,18 @@ body {
 .cell.win { background: var(--win-glow); animation: pop 0.4s; }
 .cell.gravity-col:hover:not(:disabled) { background: var(--cell-hover); box-shadow: 0 -2px 0 var(--accent2) inset; }
 .cell.placed { animation: pop 0.25s; }
+.cell .piece-symbol { display: inline-block; transition: transform 0.15s; }
+.cell .stack-badge {
+  position: absolute;
+  bottom: 3px; right: 6px;
+  font-size: 0.55rem;
+  font-weight: 800;
+  opacity: 0.65;
+  background: var(--card-bg);
+  border-radius: 6px;
+  padding: 0 4px;
+}
+.cell.stk-3:not(.blocked) { box-shadow: 0 0 0 2px var(--accent2) inset; }
 
 @keyframes pop {
   0% { transform: scale(0.5); }

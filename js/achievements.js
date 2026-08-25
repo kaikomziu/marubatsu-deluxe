@@ -8,7 +8,7 @@ function defaultStats() {
     losses: 0,
     draws: 0,
     winsBySize: { 3: 0, 4: 0, 5: 0 },
-    winsByMode: { normal: 0, misere: 0, gravity: 0, wild: 0, randomblock: 0, timeattack: 0 },
+    winsByMode: { normal: 0, misere: 0, gravity: 0, wild: 0, randomblock: 0, timeattack: 0, stack: 0 },
     winsByDifficulty: { easy: 0, normal: 0, hard: 0, extreme: 0 },
     currentStreak: 0,
     maxStreak: 0,
@@ -17,6 +17,7 @@ function defaultStats() {
     timeoutExperienced: false,
     fastestWin: { 3: null, 4: null, 5: null },
     boardFullBlockDraw: false,
+    stackCaptureUsed: false,
     unlocked: []
   };
 }
@@ -51,7 +52,9 @@ const ACHIEVEMENTS = [
   { id: "win_wild", icon: "🌀", title: "ワイルド制覇", desc: "ワイルドモードで勝利する", check: s => s.winsByMode.wild >= 1 },
   { id: "win_randomblock", icon: "🧱", title: "ランダムブロック制覇", desc: "ランダムブロックモードで勝利する", check: s => s.winsByMode.randomblock >= 1 },
   { id: "win_timeattack", icon: "⏱️", title: "タイムアタック制覇", desc: "タイムアタックモードで勝利する", check: s => s.winsByMode.timeattack >= 1 },
-  { id: "all_modes", icon: "🌈", title: "全モード制覇", desc: "6つのモードすべてで勝利する", check: s => Object.values(s.winsByMode).every(v => v >= 1) },
+  { id: "win_stack", icon: "🔺", title: "重ね取り制覇", desc: "重ね取りモードで勝利する", check: s => s.winsByMode.stack >= 1 },
+  { id: "stack_capture", icon: "👑", title: "のっとり成功", desc: "重ね取りモードで相手や自分の駒を上から覆う", check: s => s.stackCaptureUsed },
+  { id: "all_modes", icon: "🌈", title: "全モード制覇", desc: "7つのモードすべてで勝利する", check: s => Object.values(s.winsByMode).every(v => v >= 1) },
   { id: "streak3", icon: "🔥", title: "3連勝", desc: "3連勝を達成する", check: s => s.maxStreak >= 3 },
   { id: "streak5", icon: "🔥", title: "5連勝", desc: "5連勝を達成する", check: s => s.maxStreak >= 5 },
   { id: "streak10", icon: "🔥", title: "10連勝", desc: "10連勝を達成する", check: s => s.maxStreak >= 10 },

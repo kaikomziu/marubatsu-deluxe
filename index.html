@@ -66,6 +66,10 @@
         <span class="choice-title">⏱️ タイムアタック</span>
         <span class="choice-sub">制限時間内に置け</span>
       </button>
+      <button class="choice-btn" data-mode="stack">
+        <span class="choice-title">🔺 重ね取り</span>
+        <span class="choice-sub">大きい駒で乗っ取れる</span>
+      </button>
     </div>
   </section>
 
@@ -119,6 +123,13 @@
     <span>配置する記号：</span>
     <button class="wild-symbol-btn active" data-sym="X">✕</button>
     <button class="wild-symbol-btn" data-sym="O">○</button>
+  </div>
+
+  <div class="stack-tray hidden" id="stack-tray">
+    <span>置く駒：</span>
+    <button class="stack-size-btn" data-size="1">小</button>
+    <button class="stack-size-btn" data-size="2">中</button>
+    <button class="stack-size-btn" data-size="3">大</button>
   </div>
 
   <div id="board-wrap" class="board-wrap">

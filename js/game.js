@@ -1,14 +1,17 @@
 // ○×DELUXE メインゲームロジック
 const idx = aiIdx;
 
-const MODE_LABELS = { normal: "ノーマル", misere: "ミゼール", gravity: "重力", wild: "ワイルド", randomblock: "ランダムブロック", timeattack: "タイムアタック" };
+const MODE_LABELS = { normal: "ノーマル", misere: "ミゼール", gravity: "重力", wild: "ワイルド", randomblock: "ランダムブロック", timeattack: "タイムアタック", stack: "重ね取り" };
 const DIFF_LABELS = { easy: "弱い", normal: "普通", hard: "強い", extreme: "激強" };
+const SIZE_LABELS = { 1: "小", 2: "中", 3: "大" };
+const SIZE_SCALE = { 1: 0.55, 2: 0.78, 3: 1 };
 
 const G = {
   size: 3, winLength: 3, mode: "normal", opponent: "cpu", difficulty: "easy",
   board: [], players: [], turnIndex: 0, startingIndex: 0, gameOver: false,
   moveCount: 0, scores: { p1: 0, p2: 0, draw: 0 }, symbolOf: {}, wildSymbolChoice: "X",
-  timeAttack: { timer: null }, timeAttackTimeoutHappened: false, lastConfig: null
+  timeAttack: { timer: null }, timeAttackTimeoutHappened: false, lastConfig: null,
+  stacks: [], supply: {}, selectedSize: 1, stackCaptureHappened: false
 };
 
 function otherIndex(i) { return i === 0 ? 1 : 0; }
@@ -37,6 +40,32 @@ function newBoard(size, mode) {
     for (let i = 0; i < blockCount; i++) board[indices[i]] = "BLOCK";
   }
   return board;
+}
+
+// ---------- 重ね取りモード補助 ----------
+function stackPieceCount(size) { return Math.max(2, size - 1); }
+
+function defaultSelectableSize(playerIndex) {
+  for (const sz of [1, 2, 3]) if (G.supply[playerIndex][sz] > 0) return sz;
+  return 1;
+}
+
+function canPlaceStack(r, c, size, playerIndex) {
+  if (!G.supply[playerIndex] || G.supply[playerIndex][size] <= 0) return false;
+  const st = G.stacks[idx(G.size, r, c)];
+  const topSize = st.length ? st[st.length - 1].size : 0;
+  return size > topSize;
+}
+
+function hasAnyValidStackMove(playerIndex) {
+  for (let i = 0; i < G.size * G.size; i++) {
+    const st = G.stacks[i];
+    const topSize = st.length ? st[st.length - 1].size : 0;
+    for (const sz of [1, 2, 3]) {
+      if (G.supply[playerIndex][sz] > 0 && sz > topSize) return true;
+    }
+  }
+  return false;
 }
 
 // ---------- 実績/タイマー補助 ----------
@@ -107,6 +136,13 @@ function newRound(isFirst) {
   G.symbolOf[G.startingIndex] = "X";
   G.symbolOf[otherIndex(G.startingIndex)] = "O";
   G.wildSymbolChoice = "X";
+  G.stackCaptureHappened = false;
+  if (G.mode === "stack") {
+    G.stacks = Array.from({ length: G.size * G.size }, () => []);
+    const count = stackPieceCount(G.size);
+    G.supply = { 0: { 1: count, 2: count, 3: count }, 1: { 1: count, 2: count, 3: count } };
+    G.selectedSize = defaultSelectableSize(G.turnIndex);
+  }
   hideResultPanel();
   renderScoreboard();
   renderBoard([]);
@@ -115,8 +151,11 @@ function newRound(isFirst) {
 
 function afterTurnSwitch() {
   clearTimeAttackTimer();
+  if (G.mode === "stack" && !G.gameOver) G.selectedSize = defaultSelectableSize(G.turnIndex);
   updateTurnIndicator();
   updateWildToggleUI();
+  updateStackTrayUI();
+  if (G.mode === "stack") renderBoard([]);
   if (!G.gameOver) {
     if (G.mode === "timeattack" && !currentPlayerIsCPU()) startTimeAttackTimer();
     if (G.opponent === "cpu" && currentPlayerIsCPU()) setTimeout(cpuMove, 500);
@@ -126,6 +165,11 @@ function afterTurnSwitch() {
 function handleCellClick(r, c) {
   if (G.gameOver) return;
   if (G.opponent === "cpu" && currentPlayerIsCPU()) return;
+  if (G.mode === "stack") {
+    if (!canPlaceStack(r, c, G.selectedSize, G.turnIndex)) return;
+    commitStackMove(r, c, G.selectedSize);
+    return;
+  }
   let sym = G.mode === "wild" ? G.wildSymbolChoice : symbolForCurrentTurn();
   if (G.mode === "gravity") {
     const land = landingRowForCol(G.board, G.size, c);
@@ -139,6 +183,19 @@ function handleCellClick(r, c) {
 
 function cpuMove() {
   if (G.gameOver) return;
+  if (G.mode === "stack") {
+    const ctx = {
+      stacks: G.stacks.map(st => st.slice()), size: G.size, winLength: G.winLength,
+      supply: { 0: Object.assign({}, G.supply[0]), 1: Object.assign({}, G.supply[1]) },
+      aiIndex: 1, humanIndex: 0,
+      aiSymbol: symbolForCurrentTurn(), humanSymbol: symbolForCurrentTurn() === "X" ? "O" : "X",
+      difficulty: G.difficulty
+    };
+    const mv = aiChooseStackMove(ctx);
+    if (!mv) return;
+    commitStackMove(mv.r, mv.c, mv.size);
+    return;
+  }
   const ctx = {
     board: G.board.slice(), size: G.size, winLength: G.winLength, mode: G.mode, difficulty: G.difficulty,
     aiSymbol: G.mode === "wild" ? null : symbolForCurrentTurn(),
@@ -147,6 +204,40 @@ function cpuMove() {
   const mv = aiChooseMove(ctx);
   if (!mv) return;
   commitMove(mv.r, mv.c, mv.sym);
+}
+
+function commitStackMove(r, c, size) {
+  clearTimeAttackTimer();
+  const mover = G.turnIndex;
+  const sym = symbolForCurrentTurn();
+  const cellIdx = idx(G.size, r, c);
+  if (G.stacks[cellIdx].length > 0) G.stackCaptureHappened = true;
+  G.stacks[cellIdx].push({ sym, size });
+  G.supply[mover][size]--;
+  G.board[cellIdx] = sym;
+  G.moveCount++;
+
+  const madeLine = checkWinAt(G.board, G.size, r, c, sym, G.winLength);
+  if (madeLine) {
+    const cells = getWinningLineCells(G.board, G.size, r, c, sym, G.winLength);
+    renderBoard(cells);
+    endGame(mover);
+    return;
+  }
+
+  const nextIndex = otherIndex(mover);
+  if (hasAnyValidStackMove(nextIndex)) {
+    G.turnIndex = nextIndex;
+    renderBoard([]);
+    afterTurnSwitch();
+  } else if (hasAnyValidStackMove(mover)) {
+    showToast(`${G.players[nextIndex].name}は駒を置けないのでターンスキップ！`);
+    renderBoard([]);
+    afterTurnSwitch();
+  } else {
+    renderBoard([]);
+    endGame(null);
+  }
 }
 
 function commitMove(r, c, sym) {
@@ -197,6 +288,7 @@ function endGame(winnerIndex) {
   renderScoreboard();
   updateTurnIndicator();
   updateWildToggleUI();
+  updateStackTrayUI();
   updatePersistentStats(winnerIndex);
   showResultPanel(winnerIndex);
 }
@@ -231,6 +323,7 @@ function updatePersistentStats(winnerIndex) {
     }
   }
   if (G.timeAttackTimeoutHappened) stats.timeoutExperienced = true;
+  if (G.mode === "stack" && G.stackCaptureHappened) stats.stackCaptureUsed = true;
   if (isDarkModeOn()) stats.darkModeToggled = true;
 
   saveStats(stats);
@@ -241,6 +334,8 @@ function updatePersistentStats(winnerIndex) {
 
 // ---------- 描画 ----------
 function renderBoard(highlightCells) {
+  if (G.mode === "stack") { renderStackBoard(highlightCells); return; }
+
   const boardEl = document.getElementById("board");
   boardEl.style.setProperty("--size", G.size);
   boardEl.style.gridTemplateColumns = `repeat(${G.size}, 1fr)`;
@@ -264,6 +359,36 @@ function renderBoard(highlightCells) {
       btn.textContent = v === "X" ? "✕" : v === "O" ? "○" : "";
       const cpuTurn = G.opponent === "cpu" && currentPlayerIsCPU();
       btn.disabled = G.gameOver || cpuTurn || (G.mode === "gravity" ? colFull[c] : (v !== null));
+      btn.addEventListener("click", () => handleCellClick(r, c));
+      boardEl.appendChild(btn);
+    }
+  }
+}
+
+function renderStackBoard(highlightCells) {
+  const boardEl = document.getElementById("board");
+  boardEl.style.setProperty("--size", G.size);
+  boardEl.style.gridTemplateColumns = `repeat(${G.size}, 1fr)`;
+  boardEl.innerHTML = "";
+  const cpuTurn = G.opponent === "cpu" && currentPlayerIsCPU();
+
+  for (let r = 0; r < G.size; r++) {
+    for (let c = 0; c < G.size; c++) {
+      const i = idx(G.size, r, c);
+      const st = G.stacks[i] || [];
+      const top = st.length ? st[st.length - 1] : null;
+      const btn = document.createElement("button");
+      btn.className = "cell";
+      if (top) {
+        btn.classList.add("sym-" + top.sym);
+        btn.classList.add("stk-" + top.size);
+      }
+      if (highlightCells && highlightCells.some(h => h.r === r && h.c === c)) btn.classList.add("win");
+      const scale = top ? SIZE_SCALE[top.size] : 1;
+      const symbolChar = top ? (top.sym === "X" ? "✕" : "○") : "";
+      const badge = st.length > 1 ? `<span class="stack-badge">×${st.length}</span>` : "";
+      btn.innerHTML = `<span class="piece-symbol" style="transform:scale(${scale})">${symbolChar}</span>${badge}`;
+      btn.disabled = G.gameOver || cpuTurn || !canPlaceStack(r, c, G.selectedSize, G.turnIndex);
       btn.addEventListener("click", () => handleCellClick(r, c));
       boardEl.appendChild(btn);
     }
@@ -296,6 +421,20 @@ function updateWildToggleUI() {
   wrap.classList.remove("hidden");
   document.querySelectorAll(".wild-symbol-btn").forEach(b => {
     b.classList.toggle("active", b.dataset.sym === G.wildSymbolChoice);
+  });
+}
+
+function updateStackTrayUI() {
+  const wrap = document.getElementById("stack-tray");
+  const cpuTurn = G.opponent === "cpu" && currentPlayerIsCPU();
+  if (G.mode !== "stack" || G.gameOver || cpuTurn) { wrap.classList.add("hidden"); return; }
+  wrap.classList.remove("hidden");
+  const sup = G.supply[G.turnIndex];
+  document.querySelectorAll(".stack-size-btn").forEach(b => {
+    const sz = parseInt(b.dataset.size, 10);
+    b.textContent = `${SIZE_LABELS[sz]}(${sup[sz]})`;
+    b.classList.toggle("active", sz === G.selectedSize);
+    b.disabled = sup[sz] <= 0;
   });
 }
 
@@ -333,6 +472,7 @@ function helpHtml() {
     <p><b>🌀 ワイルド</b>：自分の番なら○×どちらを置いてもOK。どちらの記号でも列を完成させた人の勝ち。</p>
     <p><b>🧱 ランダムブロック</b>：最初からいくつかのマスが使用不可。同じ盤面は二度とない。</p>
     <p><b>⏱️ タイムアタック</b>：制限時間内に置かないとランダムな場所に配置されてしまう。</p>
+    <p><b>🔺 重ね取り</b>：駒には小・中・大のサイズがある。大きい駒は、置いてある小さい駒の上に重ねて「乗っ取り」できる（自分の駒でもOK）。一番上に見えている記号だけが勝敗判定の対象。どちらも置けなくなったら引き分け、片方だけ置けない場合はそのターンをスキップ。</p>
     <h3>対戦相手</h3>
     <p>CPU（弱い/普通/強い/激強）か、同じ画面で交代しながら遊ぶ2人対戦を選べます。</p>
   `;
@@ -418,6 +558,17 @@ document.addEventListener("DOMContentLoaded", () => {
       if (G.gameOver || (G.opponent === "cpu" && currentPlayerIsCPU())) return;
       G.wildSymbolChoice = b.dataset.sym;
       updateWildToggleUI();
+    });
+  });
+
+  document.querySelectorAll(".stack-size-btn").forEach(b => {
+    b.addEventListener("click", () => {
+      if (G.gameOver || (G.opponent === "cpu" && currentPlayerIsCPU())) return;
+      const sz = parseInt(b.dataset.size, 10);
+      if (G.supply[G.turnIndex][sz] <= 0) return;
+      G.selectedSize = sz;
+      updateStackTrayUI();
+      renderBoard([]);
     });
   });
 
