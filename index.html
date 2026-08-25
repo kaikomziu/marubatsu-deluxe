@@ -14,11 +14,13 @@
 <header class="app-header">
   <h1 class="logo">⭕<span>○×</span>DELUXE<span>❌</span></h1>
   <div class="header-btns">
+    <button id="btn-bgm" class="icon-btn" title="BGM">🎵</button>
     <button id="btn-achievements" class="icon-btn" title="実績">🏆</button>
     <button id="btn-darkmode" class="icon-btn" title="ダークモード">🌙</button>
     <button id="btn-help" class="icon-btn" title="遊び方">❓</button>
   </div>
 </header>
+<audio id="bgm-audio" preload="none"></audio>
 
 <main id="screen-setup" class="screen">
   <section class="setup-card">
@@ -159,6 +161,7 @@
 
 <script src="js/version.js"></script>
 <script src="js/achievements.js"></script>
+<script src="js/bgm.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/game.js"></script>
 </body>

@@ -533,6 +533,7 @@ function goToSetup() {
 
 document.addEventListener("DOMContentLoaded", () => {
   initTheme();
+  initBgmPlayer();
   renderVersionFooter();
   renderStatsPreview();
 
@@ -573,6 +574,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("btn-darkmode").addEventListener("click", toggleDarkMode);
+  document.getElementById("btn-bgm").addEventListener("click", () => { openModal(bgmModalHtml()); bindBgmModalEvents(); });
   document.getElementById("btn-achievements").addEventListener("click", () => openModal(renderAchievementsModal(loadStats())));
   document.getElementById("btn-help").addEventListener("click", () => openModal(helpHtml()));
   document.getElementById("link-changelog").addEventListener("click", (e) => {
