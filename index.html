@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>○×DELUXE - 丸バツゲーム</title>
+<meta name="description" content="3並べ・4並べ・5並べ+特殊モード満載の○×ゲーム。CPU対戦・2人対戦対応。">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⭕</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="toast-area"></div>
+
+<header class="app-header">
+  <h1 class="logo">⭕<span>○×</span>DELUXE<span>❌</span></h1>
+  <div class="header-btns">
+    <button id="btn-achievements" class="icon-btn" title="実績">🏆</button>
+    <button id="btn-darkmode" class="icon-btn" title="ダークモード">🌙</button>
+    <button id="btn-help" class="icon-btn" title="遊び方">❓</button>
+  </div>
+</header>
+
+<main id="screen-setup" class="screen">
+  <section class="setup-card">
+    <h2>1. 盤面サイズを選ぶ</h2>
+    <div class="choice-grid" id="size-choices">
+      <button class="choice-btn" data-size="3">
+        <span class="choice-title">3並べ</span>
+        <span class="choice-sub">3×3 / 3個並べたら勝ち</span>
+      </button>
+      <button class="choice-btn" data-size="4">
+        <span class="choice-title">4並べ</span>
+        <span class="choice-sub">4×4 / 4個並べたら勝ち</span>
+      </button>
+      <button class="choice-btn" data-size="5">
+        <span class="choice-title">5並べ</span>
+        <span class="choice-sub">5×5 / 5個並べたら勝ち</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="setup-card">
+    <h2>2. モードを選ぶ</h2>
+    <div class="choice-grid" id="mode-choices">
+      <button class="choice-btn" data-mode="normal">
+        <span class="choice-title">🎯 ノーマル</span>
+        <span class="choice-sub">基本ルール</span>
+      </button>
+      <button class="choice-btn" data-mode="misere">
+        <span class="choice-title">😈 ミゼール</span>
+        <span class="choice-sub">揃えたら負け</span>
+      </button>
+      <button class="choice-btn" data-mode="gravity">
+        <span class="choice-title">⬇️ 重力</span>
+        <span class="choice-sub">列に落とす早落ち方式</span>
+      </button>
+      <button class="choice-btn" data-mode="wild">
+        <span class="choice-title">🌀 ワイルド</span>
+        <span class="choice-sub">○×どちらでも置ける</span>
+      </button>
+      <button class="choice-btn" data-mode="randomblock">
+        <span class="choice-title">🧱 ランダムブロック</span>
+        <span class="choice-sub">最初から使えないマスあり</span>
+      </button>
+      <button class="choice-btn" data-mode="timeattack">
+        <span class="choice-title">⏱️ タイムアタック</span>
+        <span class="choice-sub">制限時間内に置け</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="setup-card">
+    <h2>3. 対戦相手を選ぶ</h2>
+    <div class="choice-grid" id="opponent-choices">
+      <button class="choice-btn" data-opp="cpu" data-diff="easy">
+        <span class="choice-title">🤖 CPU: 弱い</span>
+        <span class="choice-sub">まずはここから</span>
+      </button>
+      <button class="choice-btn" data-opp="cpu" data-diff="normal">
+        <span class="choice-title">🤖 CPU: 普通</span>
+        <span class="choice-sub">ほどよい歯ごたえ</span>
+      </button>
+      <button class="choice-btn" data-opp="cpu" data-diff="hard">
+        <span class="choice-title">🤖 CPU: 強い</span>
+        <span class="choice-sub">なかなか勝てない</span>
+      </button>
+      <button class="choice-btn" data-opp="cpu" data-diff="extreme">
+        <span class="choice-title">🤖 CPU: 激強</span>
+        <span class="choice-sub">最強AI</span>
+      </button>
+      <button class="choice-btn" data-opp="pvp">
+        <span class="choice-title">👥 2人対戦</span>
+        <span class="choice-sub">同じ画面で交互プレイ</span>
+      </button>
+    </div>
+  </section>
+
+  <button id="btn-start" class="start-btn" disabled>すべて選んでスタート！</button>
+
+  <section class="stats-preview" id="stats-preview"></section>
+</main>
+
+<main id="screen-game" class="screen hidden">
+  <div class="game-topbar">
+    <button id="btn-back" class="text-btn">← モード選択</button>
+    <div class="mode-badge" id="mode-badge"></div>
+    <button id="btn-restart" class="text-btn">🔄 やり直す</button>
+  </div>
+
+  <div class="scoreboard" id="scoreboard"></div>
+
+  <div class="turn-indicator" id="turn-indicator"></div>
+
+  <div class="timeattack-bar-wrap hidden" id="timeattack-wrap">
+    <div class="timeattack-bar" id="timeattack-bar"></div>
+  </div>
+
+  <div class="wild-symbol-toggle hidden" id="wild-toggle">
+    <span>配置する記号：</span>
+    <button class="wild-symbol-btn active" data-sym="X">✕</button>
+    <button class="wild-symbol-btn" data-sym="O">○</button>
+  </div>
+
+  <div id="board-wrap" class="board-wrap">
+    <div id="board" class="board"></div>
+  </div>
+
+  <div class="result-panel hidden" id="result-panel">
+    <div class="result-text" id="result-text"></div>
+    <div class="result-btns">
+      <button id="btn-again" class="start-btn">もう一回</button>
+      <button id="btn-change-mode" class="text-btn">モードを変える</button>
+    </div>
+  </div>
+</main>
+
+<div id="modal-overlay" class="modal-overlay hidden">
+  <div class="modal">
+    <button class="modal-close" id="modal-close">×</button>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<footer class="app-footer">
+  <span id="version-text"></span>
+  <a href="#" id="link-changelog">更新履歴</a>
+</footer>
+
+<script src="js/version.js"></script>
+<script src="js/achievements.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
