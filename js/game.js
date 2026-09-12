@@ -11,7 +11,8 @@ const G = {
   board: [], players: [], turnIndex: 0, startingIndex: 0, gameOver: false,
   moveCount: 0, scores: { p1: 0, p2: 0, draw: 0 }, symbolOf: {}, wildSymbolChoice: "X",
   timeAttack: { timer: null }, timeAttackTimeoutHappened: false, lastConfig: null,
-  stacks: [], supply: {}, selectedSize: 1, stackCaptureHappened: false
+  stacks: [], supply: {}, selectedSize: 1, stackCaptureHappened: false,
+  myIndex: 0, online: null
 };
 
 function otherIndex(i) { return i === 0 ? 1 : 0; }
@@ -22,6 +23,13 @@ function landingRowForCol(board, size, col) {
 }
 function currentPlayerIsCPU() { return G.opponent === "cpu" && G.turnIndex === 1; }
 function symbolForCurrentTurn() { return G.symbolOf[G.turnIndex]; }
+
+// 盤面の入力をロックすべきか(CPUの番 / オンラインで相手の番)
+function turnLocked() {
+  if (G.opponent === "cpu") return currentPlayerIsCPU();
+  if (G.opponent === "online") return G.turnIndex !== G.myIndex;
+  return false;
+}
 
 function shuffleArr(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -119,7 +127,9 @@ function startGame(config) {
   setupPlayers();
   document.getElementById("mode-badge").textContent =
     `${config.size}並べ・${MODE_LABELS[config.mode]}${G.opponent === "cpu" ? "・CPU(" + DIFF_LABELS[G.difficulty] + ")" : "・2人対戦"}`;
+  document.getElementById("btn-restart").classList.remove("hidden");
   document.getElementById("screen-setup").classList.add("hidden");
+  document.getElementById("screen-online").classList.add("hidden");
   document.getElementById("screen-game").classList.remove("hidden");
   newRound(true);
 }
@@ -157,14 +167,14 @@ function afterTurnSwitch() {
   updateStackTrayUI();
   if (G.mode === "stack") renderBoard([]);
   if (!G.gameOver) {
-    if (G.mode === "timeattack" && !currentPlayerIsCPU()) startTimeAttackTimer();
+    if (G.mode === "timeattack" && !turnLocked()) startTimeAttackTimer();
     if (G.opponent === "cpu" && currentPlayerIsCPU()) setTimeout(cpuMove, 500);
   }
 }
 
 function handleCellClick(r, c) {
   if (G.gameOver) return;
-  if (G.opponent === "cpu" && currentPlayerIsCPU()) return;
+  if (turnLocked()) return;
   if (G.mode === "stack") {
     if (!canPlaceStack(r, c, G.selectedSize, G.turnIndex)) return;
     commitStackMove(r, c, G.selectedSize);
@@ -206,7 +216,8 @@ function cpuMove() {
   commitMove(mv.r, mv.c, mv.sym);
 }
 
-function commitStackMove(r, c, size) {
+function commitStackMove(r, c, size, opts) {
+  opts = opts || {};
   clearTimeAttackTimer();
   const mover = G.turnIndex;
   const sym = symbolForCurrentTurn();
@@ -216,6 +227,10 @@ function commitStackMove(r, c, size) {
   G.supply[mover][size]--;
   G.board[cellIdx] = sym;
   G.moveCount++;
+
+  if (G.opponent === "online" && !opts.remote) {
+    pushOnlineMove({ mover: mover === 0 ? "p1" : "p2", r, c, size });
+  }
 
   const madeLine = checkWinAt(G.board, G.size, r, c, sym, G.winLength);
   if (madeLine) {
@@ -240,10 +255,17 @@ function commitStackMove(r, c, size) {
   }
 }
 
-function commitMove(r, c, sym) {
+function commitMove(r, c, sym, opts) {
+  opts = opts || {};
   clearTimeAttackTimer();
+  const mover = G.turnIndex;
   G.board[idx(G.size, r, c)] = sym;
   G.moveCount++;
+
+  if (G.opponent === "online" && !opts.remote) {
+    pushOnlineMove({ mover: mover === 0 ? "p1" : "p2", r, c, sym });
+  }
+
   const madeLine = checkWinAt(G.board, G.size, r, c, sym, G.winLength);
   let winnerIndex = null, isDraw = false;
   if (madeLine) {
@@ -305,17 +327,20 @@ function updatePersistentStats(winnerIndex) {
       if (G.mode === "randomblock" && fillRatio >= 0.8) stats.boardFullBlockDraw = true;
     }
   } else {
+    if (G.opponent === "online") stats.onlinePlayed = true;
+    const myIdx = G.opponent === "online" ? G.myIndex : 0;
     if (winnerIndex === null) {
       stats.draws++;
       stats.currentStreak = 0;
       if (G.mode === "randomblock" && fillRatio >= 0.8) stats.boardFullBlockDraw = true;
-    } else if (winnerIndex === 0) {
+    } else if (winnerIndex === myIdx) {
       stats.wins++;
+      if (G.opponent === "online") stats.onlineWins = (stats.onlineWins || 0) + 1;
       stats.currentStreak++;
       if (stats.currentStreak > stats.maxStreak) stats.maxStreak = stats.currentStreak;
       stats.winsBySize[G.size] = (stats.winsBySize[G.size] || 0) + 1;
       stats.winsByMode[G.mode] = (stats.winsByMode[G.mode] || 0) + 1;
-      stats.winsByDifficulty[G.difficulty] = (stats.winsByDifficulty[G.difficulty] || 0) + 1;
+      if (G.opponent === "cpu") stats.winsByDifficulty[G.difficulty] = (stats.winsByDifficulty[G.difficulty] || 0) + 1;
       if (stats.fastestWin[G.size] === null || G.moveCount < stats.fastestWin[G.size]) stats.fastestWin[G.size] = G.moveCount;
     } else {
       stats.losses++;
@@ -329,6 +354,322 @@ function updatePersistentStats(winnerIndex) {
   saveStats(stats);
   const newly = checkAchievements(stats);
   showAchievementToasts(newly);
+  renderStatsPreview();
+}
+
+// ---------- オンライン対戦 ----------
+const ONLINE_POLL_MS = 1600;
+
+function buildOnlineInitPayload(config) {
+  const payload = { board: newBoard(config.size, config.mode) };
+  if (config.mode === "stack") {
+    const count = stackPieceCount(config.size);
+    payload.supply = { 0: { 1: count, 2: count, 3: count }, 1: { 1: count, 2: count, 3: count } };
+    payload.stacks = Array.from({ length: config.size * config.size }, () => []);
+  }
+  return payload;
+}
+
+function openOnlineScreen(config) {
+  G.onlinePendingConfig = config;
+  document.getElementById("online-mode-badge").textContent = `${config.size}並べ・${MODE_LABELS[config.mode]}`;
+  document.getElementById("online-name-input").value = MB.getName ? MB.getName() : "";
+  showOnlineCard("choice");
+  document.getElementById("screen-setup").classList.add("hidden");
+  document.getElementById("screen-online").classList.remove("hidden");
+}
+
+function showOnlineCard(which) {
+  document.getElementById("online-choice-card").classList.toggle("hidden", which !== "choice");
+  document.getElementById("online-join-card").classList.toggle("hidden", which !== "join");
+  document.getElementById("online-waiting-card").classList.toggle("hidden", which !== "waiting");
+}
+
+function saveOnlineNameFromInput() {
+  const v = document.getElementById("online-name-input").value;
+  if (MB.setName) MB.setName(v);
+}
+
+async function startOnlineQuickMatch() {
+  if (!MB.online) { showToast("🌐 オンライン機能を利用できません"); return; }
+  saveOnlineNameFromInput();
+  const config = G.onlinePendingConfig;
+  document.getElementById("online-waiting-title").textContent = "対戦相手を探しています…";
+  document.getElementById("online-room-code-display").textContent = "";
+  document.getElementById("online-waiting-hint").textContent = "同じ設定を選んだ人と自動でマッチングします";
+  showOnlineCard("waiting");
+  try {
+    const matchId = await MB.net.matchmake(config.size, config.mode);
+    if (!matchId) { showToast("マッチングに失敗しました"); showOnlineCard("choice"); return; }
+    beginOnlineSession(matchId);
+  } catch (e) {
+    showToast("🌐 接続できませんでした");
+    showOnlineCard("choice");
+  }
+}
+
+async function startOnlineCreateRoom() {
+  if (!MB.online) { showToast("🌐 オンライン機能を利用できません"); return; }
+  saveOnlineNameFromInput();
+  const config = G.onlinePendingConfig;
+  const code = MB.genRoomCode();
+  document.getElementById("online-waiting-title").textContent = "この合言葉を友だちに送ろう";
+  document.getElementById("online-room-code-display").textContent = code;
+  document.getElementById("online-waiting-hint").textContent = "相手が入ってくると自動で対戦が始まります";
+  showOnlineCard("waiting");
+  try {
+    const matchId = await MB.net.room(code, config.size, config.mode);
+    if (!matchId) { showToast("部屋を作れませんでした"); showOnlineCard("choice"); return; }
+    beginOnlineSession(matchId);
+  } catch (e) {
+    showToast("🌐 接続できませんでした");
+    showOnlineCard("choice");
+  }
+}
+
+async function confirmOnlineJoinRoom() {
+  if (!MB.online) { showToast("🌐 オンライン機能を利用できません"); return; }
+  saveOnlineNameFromInput();
+  const code = document.getElementById("online-join-code").value;
+  if (!code || code.replace(/[^A-Za-z0-9]/g, "").length < 4) { showToast("合言葉を入力してください"); return; }
+  document.getElementById("online-waiting-title").textContent = "参加しています…";
+  document.getElementById("online-room-code-display").textContent = "";
+  document.getElementById("online-waiting-hint").textContent = "";
+  showOnlineCard("waiting");
+  try {
+    const matchId = await MB.net.room(code, null, null);
+    if (!matchId) { showToast("その合言葉の部屋が見つかりません"); showOnlineCard("join"); return; }
+    beginOnlineSession(matchId);
+  } catch (e) {
+    showToast("🌐 接続できませんでした");
+    showOnlineCard("join");
+  }
+}
+
+function beginOnlineSession(matchId) {
+  G.online = { matchId, role: null, appliedMoveCount: 0, started: false, followingRematch: false, pollTimer: null };
+  startOnlinePoll();
+}
+
+function startOnlinePoll() {
+  stopOnlinePollTimerOnly();
+  onlinePollTick();
+  G.online.pollTimer = setInterval(onlinePollTick, ONLINE_POLL_MS);
+}
+
+function stopOnlinePollTimerOnly() {
+  if (G.online && G.online.pollTimer) { clearInterval(G.online.pollTimer); G.online.pollTimer = null; }
+}
+
+function stopOnlinePoll() {
+  stopOnlinePollTimerOnly();
+  G.online = null;
+}
+
+async function onlinePollTick() {
+  if (!G.online || !G.online.matchId) return;
+  const matchId = G.online.matchId;
+  let st;
+  try { st = await MB.net.state(matchId); } catch (e) { return; }
+  if (!G.online || matchId !== G.online.matchId) return; // 遅れて届いた古い結果や離脱後は無視
+  if (!st || st.gone) { handleOnlineGone(); return; }
+
+  if (st.rematch_id && st.rematch_id !== matchId) {
+    transitionToNewOnlineMatch(st.rematch_id);
+    return;
+  }
+
+  G.online.role = st.me;
+  G.online.opponentName = st.opp_name || "相手";
+  G.myIndex = st.me === "p1" ? 0 : 1;
+
+  if (st.state === "setup") {
+    updateOnlineWaitingUI(st);
+    if (st.opp_joined && st.me === "p1" && !st.init) {
+      MB.net.init(matchId, buildOnlineInitPayload({ size: st.size, mode: st.mode })).catch(() => {});
+    }
+    // 参加者(p2)側は、部屋を作った相手(p1)が居なくなっていないか確認する。
+    // (p1側で呼ぶと「相手がまだ居ない = p2が null」を切断とみなして自分の待機を
+    //  即キャンセルしてしまうため、p1 では絶対に呼ばない)
+    if (st.me === "p2") MB.net.forfeit(matchId).catch(() => {});
+    return;
+  }
+
+  if (st.state === "finished") { handleOnlineFinished(st); return; }
+
+  if (st.state === "playing") {
+    if (!G.online.started) {
+      G.online.started = true;
+      enterOnlineGame(st);
+    }
+    applyIncomingMoves(st.moves);
+    updateOnlineStatus(st.opp_online);
+    MB.net.forfeit(matchId).catch(() => {});
+  }
+}
+
+function updateOnlineWaitingUI(st) {
+  if (st.opp_joined) {
+    document.getElementById("online-waiting-title").textContent = `${st.opp_name || "相手"} が参加しました！準備中…`;
+  }
+}
+
+function applyOnlineInit(init) {
+  G.board = (init && init.board) ? init.board.slice() : newBoard(G.size, G.mode);
+  G.turnIndex = 0;
+  G.startingIndex = 0;
+  G.gameOver = false;
+  G.moveCount = 0;
+  G.timeAttackTimeoutHappened = false;
+  G.stackCaptureHappened = false;
+  G.symbolOf = { 0: "X", 1: "O" };
+  G.wildSymbolChoice = "X";
+  if (G.mode === "stack") {
+    G.stacks = (init && init.stacks) ? init.stacks.map(st => st.slice()) : Array.from({ length: G.size * G.size }, () => []);
+    const count = stackPieceCount(G.size);
+    G.supply = (init && init.supply) ? JSON.parse(JSON.stringify(init.supply)) : { 0: { 1: count, 2: count, 3: count }, 1: { 1: count, 2: count, 3: count } };
+    G.selectedSize = defaultSelectableSize(G.turnIndex);
+  }
+}
+
+function enterOnlineGame(st) {
+  G.size = st.size;
+  G.winLength = st.size;
+  G.mode = st.mode;
+  G.opponent = "online";
+  G.difficulty = null;
+  G.scores = { p1: 0, p2: 0, draw: 0 };
+  G.myIndex = st.me === "p1" ? 0 : 1;
+  const myName = MB.getName ? MB.getName() : "あなた";
+  G.players = st.me === "p1"
+    ? [{ name: myName, isCPU: false }, { name: st.opp_name || "相手", isCPU: false }]
+    : [{ name: st.opp_name || "相手", isCPU: false }, { name: myName, isCPU: false }];
+  G.online.appliedMoveCount = 0;
+
+  applyOnlineInit(st.init);
+  document.getElementById("mode-badge").textContent = `${st.size}並べ・${MODE_LABELS[st.mode]}・🌐オンライン`;
+  document.getElementById("btn-restart").classList.add("hidden");
+  document.getElementById("online-status-row").classList.remove("hidden");
+  document.getElementById("screen-online").classList.add("hidden");
+  document.getElementById("screen-game").classList.remove("hidden");
+  hideResultPanel();
+  renderScoreboard();
+  renderBoard([]);
+  afterTurnSwitch();
+}
+
+function updateOnlineStatus(oppOnline) {
+  const row = document.getElementById("online-status-row");
+  if (G.opponent !== "online") { row.classList.add("hidden"); return; }
+  row.classList.remove("hidden");
+  const dot = document.getElementById("online-status-dot");
+  const text = document.getElementById("online-status-text");
+  dot.classList.toggle("offline", !oppOnline);
+  text.textContent = oppOnline
+    ? `${G.online.opponentName || "相手"} : 接続中`
+    : `${G.online.opponentName || "相手"} : 応答なし…`;
+}
+
+function applyIncomingMoves(moves) {
+  if (!moves || !G.online) return;
+  while (G.online.appliedMoveCount < moves.length) {
+    const mv = moves[G.online.appliedMoveCount];
+    G.online.appliedMoveCount++;
+    if (G.gameOver) continue;
+    if (G.mode === "stack") commitStackMove(mv.r, mv.c, mv.size, { remote: true });
+    else commitMove(mv.r, mv.c, mv.sym, { remote: true });
+  }
+}
+
+function pushOnlineMove(moveObj) {
+  if (!G.online || !G.online.matchId) return;
+  G.online.appliedMoveCount++;
+  MB.net.move(G.online.matchId, moveObj).catch(e => console.warn("mb_move failed", e));
+}
+
+function transitionToNewOnlineMatch(nid) {
+  if (!G.online) return;
+  G.online.matchId = nid;
+  G.online.role = null;
+  G.online.appliedMoveCount = 0;
+  G.online.started = false;
+}
+
+function handleOnlineFinished(st) {
+  const wasStarted = G.online && G.online.started;
+  stopOnlinePoll();
+  if (!wasStarted) {
+    // まだ対局画面に入っていない(ロビー待機中)の切断/キャンセル
+    if (st.end_reason === "leave" || st.end_reason === "timeout") showToast("相手が退出しました");
+    else showToast("対戦相手が見つかりませんでした");
+    showOnlineCard("choice");
+    return;
+  }
+  if (G.gameOver) return;
+  let text = "対戦が終了しました";
+  let winForMe = null;
+  if (st.end_reason === "leave") { text = `${st.opp_name || "相手"}が退出しました。あなたの勝ちです！`; winForMe = true; }
+  else if (st.end_reason === "timeout") { text = `${st.opp_name || "相手"}との通信が切れました。あなたの勝ちです！`; winForMe = true; }
+  else if (st.end_reason === "cancel") { text = "対戦相手が見つかりませんでした"; }
+  endOnlineAbandoned(text, winForMe);
+}
+
+function handleOnlineGone() {
+  const wasStarted = G.online && G.online.started;
+  stopOnlinePoll();
+  if (!wasStarted) {
+    showToast("対戦データが見つかりませんでした");
+    showOnlineCard("choice");
+    return;
+  }
+  if (G.gameOver) return;
+  endOnlineAbandoned("対戦データが見つかりませんでした", null);
+}
+
+function endOnlineAbandoned(text, winForMe) {
+  clearTimeAttackTimer();
+  G.gameOver = true;
+  if (winForMe === true) {
+    if (G.myIndex === 0) G.scores.p1++; else G.scores.p2++;
+    updatePersistentStats(G.myIndex);
+  }
+  renderScoreboard();
+  updateTurnIndicator();
+  updateWildToggleUI();
+  updateStackTrayUI();
+  document.getElementById("result-text").textContent = text;
+  document.getElementById("result-panel").classList.remove("hidden");
+}
+
+async function onlineClickAgain() {
+  if (!G.online || !G.online.matchId) { showToast("再戦できませんでした"); return; }
+  try {
+    const nid = await MB.net.rematch(G.online.matchId);
+    if (!nid) { showToast("再戦できませんでした(相手が見つかりません)"); return; }
+    transitionToNewOnlineMatch(nid);
+    hideResultPanel();
+  } catch (e) {
+    showToast("🌐 再戦の申し込みに失敗しました");
+  }
+}
+
+function leaveOnlineMatch() {
+  if (!G.online || !G.online.matchId) { G.online = null; return; }
+  MB.net.leave(G.online.matchId).catch(() => {});
+  stopOnlinePoll();
+  document.getElementById("online-status-row").classList.add("hidden");
+}
+
+function cancelOnlineWaiting() {
+  if (G.online && G.online.matchId) MB.net.leave(G.online.matchId).catch(() => {});
+  stopOnlinePoll();
+  showOnlineCard("choice");
+}
+
+function goBackFromOnlineScreen() {
+  if (G.online) cancelOnlineWaiting();
+  document.getElementById("screen-online").classList.add("hidden");
+  document.getElementById("screen-setup").classList.remove("hidden");
   renderStatsPreview();
 }
 
@@ -357,8 +698,8 @@ function renderBoard(highlightCells) {
       if (G.mode === "gravity") btn.classList.add("gravity-col");
       if (highlightCells && highlightCells.some(h => h.r === r && h.c === c)) btn.classList.add("win");
       btn.textContent = v === "X" ? "✕" : v === "O" ? "○" : "";
-      const cpuTurn = G.opponent === "cpu" && currentPlayerIsCPU();
-      btn.disabled = G.gameOver || cpuTurn || (G.mode === "gravity" ? colFull[c] : (v !== null));
+      const locked = turnLocked();
+      btn.disabled = G.gameOver || locked || (G.mode === "gravity" ? colFull[c] : (v !== null));
       btn.addEventListener("click", () => handleCellClick(r, c));
       boardEl.appendChild(btn);
     }
@@ -370,7 +711,7 @@ function renderStackBoard(highlightCells) {
   boardEl.style.setProperty("--size", G.size);
   boardEl.style.gridTemplateColumns = `repeat(${G.size}, 1fr)`;
   boardEl.innerHTML = "";
-  const cpuTurn = G.opponent === "cpu" && currentPlayerIsCPU();
+  const locked = turnLocked();
 
   for (let r = 0; r < G.size; r++) {
     for (let c = 0; c < G.size; c++) {
@@ -388,7 +729,7 @@ function renderStackBoard(highlightCells) {
       const symbolChar = top ? (top.sym === "X" ? "✕" : "○") : "";
       const badge = st.length > 1 ? `<span class="stack-badge">×${st.length}</span>` : "";
       btn.innerHTML = `<span class="piece-symbol" style="transform:scale(${scale})">${symbolChar}</span>${badge}`;
-      btn.disabled = G.gameOver || cpuTurn || !canPlaceStack(r, c, G.selectedSize, G.turnIndex);
+      btn.disabled = G.gameOver || locked || !canPlaceStack(r, c, G.selectedSize, G.turnIndex);
       btn.addEventListener("click", () => handleCellClick(r, c));
       boardEl.appendChild(btn);
     }
@@ -416,8 +757,7 @@ function updateTurnIndicator() {
 
 function updateWildToggleUI() {
   const wrap = document.getElementById("wild-toggle");
-  const cpuTurn = G.opponent === "cpu" && currentPlayerIsCPU();
-  if (G.mode !== "wild" || G.gameOver || cpuTurn) { wrap.classList.add("hidden"); return; }
+  if (G.mode !== "wild" || G.gameOver || turnLocked()) { wrap.classList.add("hidden"); return; }
   wrap.classList.remove("hidden");
   document.querySelectorAll(".wild-symbol-btn").forEach(b => {
     b.classList.toggle("active", b.dataset.sym === G.wildSymbolChoice);
@@ -426,8 +766,7 @@ function updateWildToggleUI() {
 
 function updateStackTrayUI() {
   const wrap = document.getElementById("stack-tray");
-  const cpuTurn = G.opponent === "cpu" && currentPlayerIsCPU();
-  if (G.mode !== "stack" || G.gameOver || cpuTurn) { wrap.classList.add("hidden"); return; }
+  if (G.mode !== "stack" || G.gameOver || turnLocked()) { wrap.classList.add("hidden"); return; }
   wrap.classList.remove("hidden");
   const sup = G.supply[G.turnIndex];
   document.querySelectorAll(".stack-size-btn").forEach(b => {
@@ -474,7 +813,11 @@ function helpHtml() {
     <p><b>⏱️ タイムアタック</b>：制限時間内に置かないとランダムな場所に配置されてしまう。</p>
     <p><b>🔺 重ね取り</b>：駒には小・中・大のサイズがある。大きい駒は、置いてある小さい駒の上に重ねて「乗っ取り」できる（自分の駒でもOK）。一番上に見えている記号だけが勝敗判定の対象。どちらも置けなくなったら引き分け、片方だけ置けない場合はそのターンをスキップ。</p>
     <h3>対戦相手</h3>
-    <p>CPU（弱い/普通/強い/激強）か、同じ画面で交代しながら遊ぶ2人対戦を選べます。</p>
+    <p>CPU（弱い/普通/強い/激強）、同じ画面で交代しながら遊ぶ2人対戦、そして🌐オンライン対戦から選べます。</p>
+    <h3>🌐 オンライン対戦</h3>
+    <p><b>ランダムマッチ</b>：同じ盤面サイズ・モードを選んだ誰かと自動でマッチング。</p>
+    <p><b>部屋を作る/入る</b>：合言葉（部屋コード）を友だちに送って1対1で対戦できます。</p>
+    <p>対戦中に相手が18秒以上応答しなくなると自動的にあなたの勝ちになります。</p>
   `;
 }
 
@@ -526,6 +869,8 @@ function collectSetupConfig() {
 
 function goToSetup() {
   clearTimeAttackTimer();
+  if (G.opponent === "online") leaveOnlineMatch();
+  document.getElementById("btn-restart").classList.remove("hidden");
   document.getElementById("screen-game").classList.add("hidden");
   document.getElementById("screen-setup").classList.remove("hidden");
   renderStatsPreview();
@@ -546,17 +891,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("btn-start").addEventListener("click", () => {
     if (document.getElementById("btn-start").disabled) return;
-    startGame(collectSetupConfig());
+    const config = collectSetupConfig();
+    if (config.opponent === "online") openOnlineScreen(config);
+    else startGame(config);
   });
 
   document.getElementById("btn-back").addEventListener("click", goToSetup);
   document.getElementById("btn-change-mode").addEventListener("click", goToSetup);
   document.getElementById("btn-restart").addEventListener("click", () => startGame(G.lastConfig));
-  document.getElementById("btn-again").addEventListener("click", () => newRound(false));
+  document.getElementById("btn-again").addEventListener("click", () => {
+    if (G.opponent === "online") onlineClickAgain();
+    else newRound(false);
+  });
 
   document.querySelectorAll(".wild-symbol-btn").forEach(b => {
     b.addEventListener("click", () => {
-      if (G.gameOver || (G.opponent === "cpu" && currentPlayerIsCPU())) return;
+      if (G.gameOver || turnLocked()) return;
       G.wildSymbolChoice = b.dataset.sym;
       updateWildToggleUI();
     });
@@ -564,7 +914,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.querySelectorAll(".stack-size-btn").forEach(b => {
     b.addEventListener("click", () => {
-      if (G.gameOver || (G.opponent === "cpu" && currentPlayerIsCPU())) return;
+      if (G.gameOver || turnLocked()) return;
       const sz = parseInt(b.dataset.size, 10);
       if (G.supply[G.turnIndex][sz] <= 0) return;
       G.selectedSize = sz;
@@ -572,6 +922,14 @@ document.addEventListener("DOMContentLoaded", () => {
       renderBoard([]);
     });
   });
+
+  document.getElementById("btn-online-back").addEventListener("click", goBackFromOnlineScreen);
+  document.getElementById("btn-online-quick").addEventListener("click", startOnlineQuickMatch);
+  document.getElementById("btn-online-create").addEventListener("click", startOnlineCreateRoom);
+  document.getElementById("btn-online-join").addEventListener("click", () => showOnlineCard("join"));
+  document.getElementById("btn-online-join-cancel").addEventListener("click", () => showOnlineCard("choice"));
+  document.getElementById("btn-online-join-confirm").addEventListener("click", confirmOnlineJoinRoom);
+  document.getElementById("btn-online-cancel").addEventListener("click", cancelOnlineWaiting);
 
   document.getElementById("btn-darkmode").addEventListener("click", toggleDarkMode);
   document.getElementById("btn-bgm").addEventListener("click", () => { openModal(bgmModalHtml()); bindBgmModalEvents(); });

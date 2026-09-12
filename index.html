@@ -98,12 +98,63 @@
         <span class="choice-title">👥 2人対戦</span>
         <span class="choice-sub">同じ画面で交互プレイ</span>
       </button>
+      <button class="choice-btn" data-opp="online">
+        <span class="choice-title">🌐 オンライン対戦</span>
+        <span class="choice-sub">ネットの誰かと対戦</span>
+      </button>
     </div>
   </section>
 
   <button id="btn-start" class="start-btn" disabled>すべて選んでスタート！</button>
 
   <section class="stats-preview" id="stats-preview"></section>
+</main>
+
+<main id="screen-online" class="screen hidden">
+  <div class="game-topbar">
+    <button id="btn-online-back" class="text-btn">← モード選択</button>
+    <div class="mode-badge" id="online-mode-badge"></div>
+    <span></span>
+  </div>
+
+  <section class="setup-card">
+    <h2>あなたの名前</h2>
+    <input type="text" id="online-name-input" class="online-text-input" maxlength="12" placeholder="プレイヤー1234">
+  </section>
+
+  <section class="setup-card" id="online-choice-card">
+    <h2>対戦方法を選ぶ</h2>
+    <div class="choice-grid">
+      <button class="choice-btn" id="btn-online-quick">
+        <span class="choice-title">🔍 ランダムマッチ</span>
+        <span class="choice-sub">同じ設定の誰かと自動で対戦</span>
+      </button>
+      <button class="choice-btn" id="btn-online-create">
+        <span class="choice-title">🔑 部屋を作る</span>
+        <span class="choice-sub">合言葉を友だちに送って対戦</span>
+      </button>
+      <button class="choice-btn" id="btn-online-join">
+        <span class="choice-title">🚪 部屋に入る</span>
+        <span class="choice-sub">合言葉を入力して参加</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="setup-card hidden" id="online-join-card">
+    <h2>合言葉を入力</h2>
+    <input type="text" id="online-join-code" class="online-text-input online-code-input" maxlength="10" placeholder="ABCD12">
+    <div class="online-btn-row">
+      <button id="btn-online-join-confirm" class="start-btn">参加する</button>
+      <button id="btn-online-join-cancel" class="text-btn">やめる</button>
+    </div>
+  </section>
+
+  <section class="setup-card hidden" id="online-waiting-card">
+    <h2 id="online-waiting-title">対戦相手を探しています…</h2>
+    <div class="online-room-code" id="online-room-code-display"></div>
+    <p class="bgm-hint" id="online-waiting-hint"></p>
+    <button id="btn-online-cancel" class="text-btn">キャンセル</button>
+  </section>
 </main>
 
 <main id="screen-game" class="screen hidden">
@@ -116,6 +167,11 @@
   <div class="scoreboard" id="scoreboard"></div>
 
   <div class="turn-indicator" id="turn-indicator"></div>
+
+  <div class="online-status-row hidden" id="online-status-row">
+    <span class="online-dot" id="online-status-dot"></span>
+    <span id="online-status-text"></span>
+  </div>
 
   <div class="timeattack-bar-wrap hidden" id="timeattack-wrap">
     <div class="timeattack-bar" id="timeattack-bar"></div>
@@ -162,6 +218,8 @@
 <script src="js/version.js"></script>
 <script src="js/achievements.js"></script>
 <script src="js/bgm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/net.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/game.js"></script>
 </body>

@@ -366,6 +366,38 @@ body {
 .ach-icon { font-size: 1.5rem; display: block; margin-bottom: 4px; }
 .ach-progress { text-align: center; margin: 6px 0 4px; font-weight: 700; color: var(--text-sub); }
 
+.online-text-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--cell-bg);
+  color: var(--text);
+  font-size: 1rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.online-code-input { text-align: center; font-weight: 800; font-size: 1.3rem; letter-spacing: 3px; text-transform: uppercase; }
+.online-btn-row { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+.online-btn-row .start-btn { flex: 1; }
+#online-waiting-card { text-align: center; }
+#online-waiting-card h2 { font-size: 1.05rem; }
+.online-room-code {
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: 6px;
+  padding: 16px;
+  margin: 10px 0;
+  border: 3px dashed var(--accent2);
+  border-radius: 14px;
+  color: var(--accent2);
+  background: var(--cell-bg);
+}
+.online-room-code:empty { display: none; }
+.online-status-row { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.85rem; color: var(--text-sub); margin-top: 6px; }
+.online-dot { width: 8px; height: 8px; border-radius: 50%; background: #4caf50; display: inline-block; }
+.online-dot.offline { background: #bbb; }
+
 .bgm-hint { font-size: 0.8rem; color: var(--text-sub); line-height: 1.6; }
 .bgm-hint code { background: var(--cell-bg); padding: 1px 5px; border-radius: 4px; }
 .bgm-controls { display: flex; gap: 10px; margin: 10px 0 14px; }

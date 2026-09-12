@@ -18,6 +18,8 @@ function defaultStats() {
     fastestWin: { 3: null, 4: null, 5: null },
     boardFullBlockDraw: false,
     stackCaptureUsed: false,
+    onlinePlayed: false,
+    onlineWins: 0,
     unlocked: []
   };
 }
@@ -61,6 +63,8 @@ const ACHIEVEMENTS = [
   { id: "first_draw", icon: "🤝", title: "痛み分け", desc: "初めて引き分ける", check: s => s.draws >= 1 },
   { id: "first_loss", icon: "😢", title: "経験値", desc: "初めて敗北する", check: s => s.losses >= 1 },
   { id: "play_pvp", icon: "👥", title: "2人対戦デビュー", desc: "2人対戦を1回プレイする", check: s => s.pvpPlayed },
+  { id: "play_online", icon: "🌐", title: "オンラインデビュー", desc: "オンライン対戦を1回プレイする", check: s => s.onlinePlayed },
+  { id: "win_online", icon: "🏆", title: "ネット越しの勝利", desc: "オンライン対戦で勝利する", check: s => s.onlineWins >= 1 },
   { id: "dark_mode", icon: "🌙", title: "夜派", desc: "ダークモードを使う", check: s => s.darkModeToggled },
   { id: "timeout_once", icon: "⏰", title: "時間切れ", desc: "タイムアタックで時間切れを経験する", check: s => s.timeoutExperienced },
   { id: "speed_win3", icon: "⚡", title: "最速勝利", desc: "3並べを最短3手で勝利する", check: s => s.fastestWin[3] !== null && s.fastestWin[3] <= 3 },
